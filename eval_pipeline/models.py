@@ -97,7 +97,7 @@ class HFModel(Model):
             else:
                 prefix = ""
             torch.cuda.empty_cache()
-            self.model = AutoModelForCausalLM.from_pretrained(prefix + model_name, max_length=1024).to(self.device)  # type: ignore
+            self.model = self._load_opt(prefix + model_name, device)
         # apparently the OPT models need slightly different tokenizers
         # https://huggingface.co/docs/transformers/main/en/model_doc/opt#overview
         if model_name.startswith("opt-"):
