@@ -149,11 +149,57 @@ class HFModel(Model):
                 raise ValueError(f"Unrecognised task type {task_type}")
             return rv
 
+    def _evaluate_single_classification(
+        self,
+        examples: list[ClassificationExample]
+    ) -> Optional[dict[str, Union[Sequence[float], Sequence[int]]]]:
+        all_class_tokens = []
+        for example in examples:
+            logits = self.tokenizer(list(example.classes), add_special_tokens=False).input_ids
+            for logit in logits:
+                if len(logit) != 1:
+                    return None
+            all_class_tokens.append([logit[0] for logit in logits])
+
+        prompts = [example.prompt for example in examples]
+        all_logits, _ = self._get_logits_and_tokens(prompts)
+
+        total_logprobs = []
+        losses = []
+        labels_correct = []
+        labels_predicted = []
+        for example, logits, class_tokens in zip(examples, all_logits, all_class_tokens):
+            logprobs = F.log_softmax(logits[-1], dim=-1)
+            relevant_logprobs = logprobs[class_tokens]
+
+            loss = -F.log_softmax(relevant_logprobs, dim=-1)[example.answer_index]
+            losses.append(loss.item())
+            total_logprob = torch.logsumexp(relevant_logprobs, dim=-1)
+            total_logprobs.append(total_logprob.item())
+
+            label_correct = int(np.argmax(relevant_logprobs) == example.answer_index)
+            labels_correct.append(label_correct)
+
+            label_predicted = example.classes[relevant_logprobs.argmax(dim=-1).item()]
+            labels_predicted.append(label_predicted)
+
+        return {
+            "loss": losses,
+            "correct": labels_correct,
+            "predicted": labels_predicted,
+            "total_logprob": total_logprobs,
+        }
+
     def _evaluate_classification(
         self,
         examples: list[ClassificationExample],
         task_type: TaskType,
     ) -> dict[str, Union[Sequence[float], Sequence[int]]]:
+        # NOTE: when classes are all single tokens, make one model call per example.
+        single_classification = self._evaluate_single_classification(examples)
+        if single_classification is not None:
+            return single_classification
+
         prompts = [
             example.prompt + class_seq
             for example in examples
@@ -463,7 +509,8 @@ class GPT3Model(Model):
         labels_correct = []
         total_logprobs = []
         choices = response_json["choices"]
-        
+
+        labels_predicted = []
         for i, example in enumerate(examples):
             logprobs_dict = choices[i]["logprobs"]
             if logprobs_dict["text_offset"][-1] != len(example.prompt):
@@ -484,9 +531,14 @@ class GPT3Model(Model):
 
             label_correct = int(np.argmax(relevant_logprobs) == example.answer_index)
             labels_correct.append(label_correct)
+
+            label_predicted = example.classes[relevant_logprobs.argmax(dim=-1).item()]
+            labels_predicted.append(label_predicted)
+
         return {
             "loss": losses,
             "correct": labels_correct,
+            "predicted": labels_predicted,
             "total_logprob": total_logprobs,
         }
 
