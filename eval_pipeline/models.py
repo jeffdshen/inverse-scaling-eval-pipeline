@@ -107,7 +107,6 @@ class HFModel(Model):
         self.tokenizer = AutoTokenizer.from_pretrained(
             prefix + model_name,
             use_fast=use_fast,
-            model_max_length=1023,
         )
 
     def _load_opt(self, checkpoint: str, device: Device):
@@ -115,7 +114,6 @@ class HFModel(Model):
             checkpoint,
             device_map="auto",
             torch_dtype=torch.float16,
-            max_length=1024,
         )
         return self.model
 
@@ -257,7 +255,7 @@ class HFModel(Model):
         all_tokens = []
         for prompt in prompts:
             tokenized_inputs = self.tokenizer(
-                prompt, return_tensors="pt", truncation=True
+                prompt, return_tensors="pt"
             ).to(self.device)
             outputs = self.model(**tokenized_inputs)
             logits = outputs["logits"].detach().to(device="cpu", dtype=torch.float32)
@@ -272,7 +270,7 @@ class HFModel(Model):
         # finding the target
         prompts = [example.prompt + example.completion for example in examples]
         tokenized_inputs = self.tokenizer(
-            prompts, return_tensors="pt", truncation=True
+            prompts, return_tensors="pt"
         ).to(self.device)
 
         target_sequences = [example.completion for example in examples]
@@ -305,10 +303,10 @@ class HFModel(Model):
         prompts = [example.prompt for example in examples]
         other_prompts = [example.other_prompt for example in examples]
         tokenized_inputs = self.tokenizer(
-            prompts, return_tensors="pt", truncation=True
+            prompts, return_tensors="pt"
         ).to(self.device)
         other_tokenized_inputs = self.tokenizer(
-            other_prompts, return_tensors="pt", truncation=True
+            other_prompts, return_tensors="pt"
         ).to(self.device)
         outputs = self.model(**tokenized_inputs)
         other_outputs = self.model(**other_tokenized_inputs)
@@ -350,7 +348,7 @@ class HFModel(Model):
     ) -> dict[str, Sequence[float]]:
         prompts = [example.prompt for example in examples]
         tokenized_inputs = self.tokenizer(
-            prompts, return_tensors="pt", truncation=True
+            prompts, return_tensors="pt"
         ).to(self.device)
         parser = BasicParser()
         # NOTE: this may need to change if we use batch size > 1 with padding
