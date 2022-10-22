@@ -522,6 +522,9 @@ class GPT3Model(Model):
 
             top_logprobs = logprobs_dict["top_logprobs"][-1]
             if not all(c in top_logprobs for c in example.classes):
+                print(logprobs_dict)
+                print(example)
+                print(logit_bias)
                 raise ValueError(f"Not all tokens {example.classes} found in logprobs {top_logprobs}")
 
             relevant_logprobs = torch.tensor([top_logprobs[c] for c in example.classes])
