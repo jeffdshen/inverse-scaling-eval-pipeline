@@ -478,11 +478,7 @@ class GPT3Model(Model):
             raise ValueError(f"Unrecognised task type {task_type}")
         return rv
 
-    def _evaluate_single_classification(
-        self,
-        examples: list[ClassificationExample]
-    ) -> Optional[dict[str, Union[Sequence[float], Sequence[int]]]]:
-        MAX_LOGPROBS = 5
+    def _get_logit_bias(self, examples):
         logit_bias = {}
         for example in examples:
             logits = self.tokenizer(list(example.classes), add_special_tokens=False).input_ids
@@ -490,7 +486,15 @@ class GPT3Model(Model):
                 if len(logit) != 1:
                     return None
                 logit_bias[logit[0]] = 100
-        if len(logit_bias) > MAX_LOGPROBS:
+        return logit_bias
+
+    def _evaluate_single_classification_batch(
+        self,
+        examples: list[ClassificationExample]
+    ) -> Optional[dict[str, Union[Sequence[float], Sequence[int]]]]:
+        MAX_LOGPROBS = 5
+        logit_bias = self._get_logit_bias(examples)
+        if logit_bias is None or len(logit_bias) > MAX_LOGPROBS:
             return None
 
         prompts = [example.prompt for example in examples]
@@ -539,6 +543,38 @@ class GPT3Model(Model):
             "predicted": labels_predicted,
             "total_logprob": total_logprobs,
         }
+
+    
+    def _evaluate_single_classification(
+        self,
+        examples: list[ClassificationExample]
+    ) -> Optional[dict[str, Union[Sequence[float], Sequence[int]]]]:
+        MAX_LOGPROBS = 5
+        if any(len(example.classes) > MAX_LOGPROBS for example in examples):
+            return None
+
+        MAX_BATCHES = 5
+        classes_set = set(tuple(sorted(example.classes)) for example in examples)
+        if len(classes_set) > MAX_BATCHES:
+            return None
+        
+        if self._get_logit_bias(examples) is None:
+            return None
+        
+        m = len(classes_set)
+        n = len(examples)
+        classes_map = {k: i for i,k in enumerate(classes_set)}
+        cs = [classes_map[tuple(sorted(example.classes))] for example in examples]
+        indices = [[k for k, c in enumerate(cs) if c == i] for i in range(m)]
+        batches = [[examples[k] for k in l] for l in indices]
+        results = [self._evaluate_single_classification_batch(batch) for batch in batches]
+        indices = sorted([(k, i, j) for i, l in enumerate(indices) for j, k in enumerate(l)])
+        all_results = {"loss": [], "correct": [], "predicted": [], "total_logprob": []}
+        for col in all_results:
+            for k, i, j in indices:
+                all_results[col].append(results[i][col][j])
+
+        return all_results
 
     def _evaluate_classification(
         self,
