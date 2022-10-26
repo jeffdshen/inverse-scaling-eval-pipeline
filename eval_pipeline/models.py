@@ -522,7 +522,7 @@ class GPT3Model(Model):
 
             top_logprobs = logprobs_dict["top_logprobs"][-1]
             if not all(c in top_logprobs for c in example.classes):
-                print(logprobs_dict)
+                print(response_json)
                 print(example)
                 print(logit_bias)
                 raise ValueError(f"Not all tokens {example.classes} found in logprobs {top_logprobs}")
